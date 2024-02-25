@@ -5,7 +5,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/Zafei-Erin/mazeGame/internal/tracker"
+	"github.com/Zafei-Erin/Game/internal/tracker"
 )
 
 func main() {
