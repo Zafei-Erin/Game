@@ -3,7 +3,6 @@ package server
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"math/rand"
 	"net"
 	"sync"
@@ -90,7 +89,6 @@ func (gameServer *GameServer) handleMessage(message types.Message) {
 	if err := json.Unmarshal(message.Payload, &request); err != nil {
 		fmt.Println("unmarshal error: ", err)
 		return
-		// panic(err)
 	}
 
 	// backup server only backup
@@ -120,8 +118,8 @@ func (gameServer *GameServer) handleMessage(message types.Message) {
 		gameServer.changeToPrimary()
 	}
 
+	// backup server does not response to over type of request
 	if gameServer.status == "backup_server" {
-		fmt.Printf("as a backup, receive msg from %s, move: %s\n", request.Id, request.Type)
 		message.Conn.Close()
 		return
 	}
@@ -214,44 +212,6 @@ func (gameServer *GameServer) addPlayer(player types.PlayerAddr) {
 	go gameServer.playerRoutine(ch)
 }
 
-func (gameServer *GameServer) assignBackupServer(playerInfo types.PlayerAddr) error {
-	// fmt.Println("assigning a backup server")
-
-	maxRetries := 3
-
-	for retry := 0; retry <= maxRetries; retry++ {
-		conn, err := net.Dial("tcp", playerInfo.PlayerAddr)
-		if err != nil {
-			fmt.Printf("assigning backup server: error (retry %d of %d)\n", retry+1, maxRetries)
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-		defer conn.Close()
-
-		msg := types.ReqToServer{
-			Type: "generate_backup_server",
-			Id:   gameServer.gamestate.PrimaryServer.PlayerId,
-			Data: lib.Marshal(gameServer.gamestate),
-		}
-
-		conn.Write(lib.Marshal(msg))
-
-		buffer := make([]byte, 8192)
-		n, readErr := conn.Read(buffer)
-		if readErr != nil && readErr != io.EOF {
-			fmt.Println(readErr)
-			return readErr
-		}
-
-		if string(buffer[:n]) != "ok" {
-			return fmt.Errorf("assign backup server error")
-		}
-		return nil
-	}
-
-	return fmt.Errorf("assigning backup server: max retries reached, unable to connect")
-}
-
 func (gameServer *GameServer) move(gamestate *types.GameState, direction string, playerID string) {
 	// Find the index of the player in the slice
 	playerIndex, found := lib.FindPlayerIndex(playerID, gamestate.Players)
@@ -323,96 +283,4 @@ func (gameServer *GameServer) move(gamestate *types.GameState, direction string,
 		playerInfo.PositionY = newY
 		gamestate.Players[playerIndex] = playerInfo
 	}
-}
-
-func (gameServer *GameServer) ping() {
-	for {
-		// ping every 0.5s
-		time.Sleep(time.Millisecond * 500)
-		alivePlayers := []types.Player{}
-		deadPlayers := []types.Player{}
-		alivePlayerIds := []string{}
-		deadPlayerIds := []string{}
-		gameServer.mu.Lock()
-		// Ping all servers, get the list of alive ones.
-		for index, p := range gameServer.gamestate.Players {
-			// Don't ping itself.
-			if index == 0 {
-				alivePlayers = append(alivePlayers, p)
-				alivePlayerIds = append(alivePlayerIds, p.PlayerId)
-				continue
-			}
-
-			addr := p.PlayerAddr
-			err := gameServer.sendPingMessage(addr)
-			if err == nil {
-				alivePlayers = append(alivePlayers, p)
-				alivePlayerIds = append(alivePlayerIds, p.PlayerId)
-			} else {
-				deadPlayerIds = append(deadPlayerIds, p.PlayerId)
-				deadPlayers = append(deadPlayers, p)
-				fmt.Println("dead players: ", deadPlayerIds)
-			}
-		}
-
-		// fmt.Println("alive: ", alivePlayerIds)
-		if len(alivePlayers) == len(gameServer.gamestate.Players) && gameServer.gamestate.BackupServer.PlayerAddr != "" {
-			gameServer.mu.Unlock()
-			continue
-		}
-
-		// alive players have changed!
-		gameServer.gamestate.Players = alivePlayers
-
-		// Update the map, cleaning dead players.
-		for _, p := range deadPlayers {
-			x, y := p.PositionX, p.PositionY
-			gameServer.gamestate.Mazemap[x][y] = ""
-		}
-
-		b := lib.Marshal(gameServer.gamestate)
-
-		// backup if change
-		if gameServer.gamestate.BackupServer.PlayerAddr != "" {
-			if err := gameServer.sendToBackup(b); err != nil {
-				// The backup server is dead. Select and generate a new backup server.
-				gameServer.gamestate.BackupServer.PlayerAddr = ""
-				gameServer.gamestate.BackupServer.PlayerId = ""
-			}
-		}
-
-		// assign new backup
-		if gameServer.gamestate.BackupServer.PlayerAddr == "" && len(alivePlayers) > 1 {
-		assign_new_backup:
-			for _, i := range alivePlayers[1:] {
-				newBackup := types.PlayerAddr{
-					PlayerId:   i.PlayerId,
-					PlayerAddr: i.PlayerAddr,
-				}
-				if err := gameServer.assignBackupServer(newBackup); err == nil {
-					gameServer.gamestate.BackupServer = newBackup
-					fmt.Printf("assign %s as backup\n", i.PlayerId)
-					break assign_new_backup
-				}
-			}
-		}
-
-		gameServer.mu.Unlock()
-	}
-}
-
-func (gameServer *GameServer) sendPingMessage(addr string) error {
-	conn, err := net.Dial("tcp", addr)
-	if err != nil {
-		fmt.Println("sending to player: ", err)
-		return err
-	}
-	msg := types.ReqToServer{
-		Type: "ping",
-		Id:   gameServer.gamestate.PrimaryServer.PlayerId,
-	}
-
-	conn.Write(lib.Marshal(msg))
-	defer conn.Close()
-	return nil
 }

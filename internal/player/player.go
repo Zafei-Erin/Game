@@ -3,7 +3,7 @@ package player
 import (
 	"fmt"
 
-	"github.com/Zafei-Erin/Game/internal/player/server"
+	"github.com/Zafei-Erin/Game/internal/server"
 	"github.com/Zafei-Erin/Game/types"
 )
 

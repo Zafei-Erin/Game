@@ -1,8 +1,9 @@
-package server 
+package server
 
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"time"
 
@@ -10,7 +11,7 @@ import (
 	"github.com/Zafei-Erin/Game/types"
 )
 
-// If the backup server didn't receive ping for 2000ms, it changes to the primary server.
+// If the backup server didn't receive ping for 550ms, it changes to the primary server.
 func (s *Server) backupReceivePing() {
 	for {
 		isChanged := false
@@ -36,14 +37,14 @@ func (gameServer *GameServer) changeToPrimary() {
 	gameServer.gamestate.PrimaryServer = gameServer.gamestate.BackupServer
 	gameServer.status = "primary_server"
 
-	// Remove the former primary from tracker
-	// Also discard it from the players list and the gamestate
+	// clean old primary server from the players list and gamestate
 	discardedServer := gameServer.gamestate.Players[0]
 	gameServer.gamestate.Players = gameServer.gamestate.Players[1:]
 	gameServer.gamestate.Mazemap[discardedServer.PositionX][discardedServer.PositionY] = ""
 	gameServer.gamestate.BackupServer.PlayerAddr = ""
 	gameServer.gamestate.BackupServer.PlayerId = ""
 
+	// backup server create and run player threads
 	gameServer.playerChannels = make(map[string]chan types.Message)
 	for _, temp := range gameServer.gamestate.Players {
 		ch := make(chan types.Message, 50)
@@ -52,6 +53,7 @@ func (gameServer *GameServer) changeToPrimary() {
 		go gameServer.playerRoutine(ch)
 	}
 
+	// update tracker with cleaned player list
 	msg := types.Req{
 		Type: "update",
 		Data: lib.Marshal(gameServer.gamestate.Players),
@@ -64,10 +66,7 @@ func (gameServer *GameServer) changeToPrimary() {
 	defer conn.Close()
 
 	// assign backup, just choose the second in the player list
-	for indexi, i := range gameServer.gamestate.Players {
-		if indexi == 0 {
-			continue
-		}
+	for _, i := range gameServer.gamestate.Players[1:] {
 		newBackup := types.PlayerAddr{
 			PlayerId:   i.PlayerId,
 			PlayerAddr: i.PlayerAddr,
@@ -84,21 +83,18 @@ func (gameServer *GameServer) changeToPrimary() {
 	go gameServer.ping()
 }
 
+// create and run player threads
 func (gameServer *GameServer) playerRoutine(ch chan types.Message) {
-
 	for msg := range ch {
-		// fmt.Printf("new msg!")
 		request := types.ReqToServer{}
 		if err := json.Unmarshal(msg.Payload, &request); err != nil {
 			fmt.Println("unmarshal error: ", err)
 			return
-			// panic(err)
 		}
 		fmt.Printf("in player thread %s, move type: %s \n", request.Id, request.Type)
 		gameServer.mu.Lock()
-		defer gameServer.mu.Unlock()
 
-		// primary server
+		// primary server handle player's request
 		switch request.Type {
 		case "refresh", "up", "down", "left", "right":
 			gameServer.move(gameServer.gamestate, request.Type, request.Id)
@@ -107,19 +103,54 @@ func (gameServer *GameServer) playerRoutine(ch chan types.Message) {
 			panic("invalid message received")
 		}
 
-		//gameServer.gamestate.Test += 1
-
 		b, err := json.Marshal(gameServer.gamestate)
 		if err != nil {
 			panic(err)
 		}
 
+		// try to notify backend server and player at the same time
 		if gameServer.gamestate.BackupServer.PlayerAddr != "" {
 			go gameServer.sendToBackup(b)
 		}
-
-		gameServer.mu.Unlock()
 		msg.Conn.Write(b)
 
+		gameServer.mu.Unlock()
 	}
+}
+
+// transform a normal player to backup server
+func (gameServer *GameServer) assignBackupServer(playerInfo types.PlayerAddr) error {
+	maxRetries := 3
+
+	for retry := 0; retry <= maxRetries; retry++ {
+		conn, err := net.Dial("tcp", playerInfo.PlayerAddr)
+		if err != nil {
+			fmt.Printf("assigning backup server: error (retry %d of %d)\n", retry+1, maxRetries)
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		defer conn.Close()
+
+		msg := types.ReqToServer{
+			Type: "generate_backup_server",
+			Id:   gameServer.gamestate.PrimaryServer.PlayerId,
+			Data: lib.Marshal(gameServer.gamestate),
+		}
+
+		conn.Write(lib.Marshal(msg))
+
+		buffer := make([]byte, 8192)
+		n, readErr := conn.Read(buffer)
+		if readErr != nil && readErr != io.EOF {
+			fmt.Println(readErr)
+			return readErr
+		}
+
+		if string(buffer[:n]) != "ok" {
+			return fmt.Errorf("assign backup server error")
+		}
+		return nil
+	}
+
+	return fmt.Errorf("assigning backup server: max retries reached, unable to connect")
 }
