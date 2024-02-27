@@ -4,14 +4,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+
+	"github.com/Zafei-Erin/Game/types"
 )
+
+type Tracker struct {
+	n       int
+	k       int
+	players []types.PlayerAddr
+	ln      net.Listener
+	msgch   chan types.Message
+	quitch  chan struct{}
+}
 
 func NewTracker(n, k int) *Tracker {
 	return &Tracker{
 		n:       n,
 		k:       k,
-		players: []PlayerInfo{},
-		msgch:   make(chan Message, 50),
+		players: []types.PlayerAddr{},
+		msgch:   make(chan types.Message, 50),
 	}
 }
 
@@ -48,9 +59,9 @@ func (t *Tracker) accept() {
 			return
 		}
 
-		t.msgch <- Message{
-			conn:    conn,
-			payload: buf[:n],
+		t.msgch <- types.Message{
+			Conn:    conn,
+			Payload: buf[:n],
 		}
 	}
 }
@@ -61,9 +72,9 @@ func (t *Tracker) HandleMsgChan() {
 	}
 }
 
-func (t *Tracker) handleMsg(message Message) {
-	request := Req{}
-	if err := json.Unmarshal(message.payload, &request); err != nil {
+func (t *Tracker) handleMsg(message types.Message) {
+	request := types.Req{}
+	if err := json.Unmarshal(message.Payload, &request); err != nil {
 		fmt.Println("unmarshal error")
 		return
 	}
@@ -71,12 +82,12 @@ func (t *Tracker) handleMsg(message Message) {
 	switch request.Type {
 	case "init":
 		fmt.Printf("%s tries to join game", request.Data)
-		t.players = append(t.players, PlayerInfo{
+		t.players = append(t.players, types.PlayerAddr{
 			PlayerId:   string(request.Data),
-			PlayerAddr: message.conn.RemoteAddr().String(),
+			PlayerAddr: message.Conn.RemoteAddr().String(),
 		})
 
-		res := Res{
+		res := types.Res{
 			N:       t.n,
 			K:       t.k,
 			Players: t.players,
@@ -86,7 +97,7 @@ func (t *Tracker) handleMsg(message Message) {
 		if err != nil {
 			panic(err)
 		}
-		message.conn.Write(b)
+		message.Conn.Write(b)
 
 	case "update":
 		fmt.Printf("These players are cleaned: %s \n", t.players)
