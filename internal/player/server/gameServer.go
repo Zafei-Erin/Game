@@ -355,7 +355,7 @@ func (gameServer *GameServer) ping() {
 			}
 		}
 
-		fmt.Println("alive: ", alivePlayerIds)
+		// fmt.Println("alive: ", alivePlayerIds)
 		if len(alivePlayers) == len(gameServer.gamestate.Players) && gameServer.gamestate.BackupServer.PlayerAddr != "" {
 			gameServer.mu.Unlock()
 			continue

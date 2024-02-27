@@ -81,7 +81,7 @@ func (t *Tracker) handleMsg(message types.Message) {
 
 	switch request.Type {
 	case "init":
-		fmt.Printf("%s tries to join game", request.Data)
+		fmt.Printf("%s tries to join game\n", request.Data)
 		t.players = append(t.players, types.PlayerAddr{
 			PlayerId:   string(request.Data),
 			PlayerAddr: message.Conn.RemoteAddr().String(),
