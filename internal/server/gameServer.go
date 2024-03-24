@@ -69,7 +69,7 @@ func (s *Server) NewGameServer(K int, N int) *GameServer {
 func (gameServer *GameServer) sendToBackup(marshaledGameState []byte) error {
 	conn, err := net.Dial("tcp", gameServer.gamestate.BackupServer.PlayerAddr)
 	if err != nil {
-		fmt.Printf("sending to backup: %s \n, error: %s", gameServer.gamestate.BackupServer.PlayerId, err)
+		fmt.Printf("sending to backup: %s, \n error: %s", gameServer.gamestate.BackupServer.PlayerId, err)
 		return err
 	}
 	defer conn.Close()

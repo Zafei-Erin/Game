@@ -18,7 +18,6 @@ func (s *Server) backupReceivePing() {
 		timer := time.NewTimer(550 * time.Millisecond)
 		select {
 		case <-s.gameServer.pingch:
-			fmt.Println("Primary server is alive")
 			isChanged = false
 		case <-timer.C:
 			isChanged = true
@@ -91,7 +90,6 @@ func (gameServer *GameServer) playerRoutine(ch chan types.Message) {
 			fmt.Println("unmarshal error: ", err)
 			return
 		}
-		fmt.Printf("in player thread %s, move type: %s \n", request.Id, request.Type)
 		gameServer.mu.Lock()
 
 		// primary server handle player's request

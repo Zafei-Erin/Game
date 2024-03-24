@@ -98,7 +98,7 @@ func (gameServer *GameServer) ping() {
 func (gameServer *GameServer) sendPingMessage(addr string) error {
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
-		fmt.Println("sending to player: ", err)
+		// fmt.Println("sending to player: ", err)
 		return err
 	}
 	msg := types.ReqToServer{

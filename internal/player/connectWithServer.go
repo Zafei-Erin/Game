@@ -51,8 +51,6 @@ func (player *GamePlayer) SendMessageToServer(Type string, response *types.GameS
 	fmt.Printf("send request %s to primary %s\n", Type, player.LocalGameState.PrimaryServer.PlayerId)
 	// send to primary
 	if err := player.SendToServer(player.LocalGameState.PrimaryServer.PlayerAddr, Type, response); err != nil {
-		fmt.Printf("send request %s to primary failed, send to every one\n", Type)
-		fmt.Println(response.Players)
 		time.Sleep(550 * time.Millisecond)
 		// if primary failed, send to everyone, only backup response
 		for _, p := range response.Players {
@@ -62,10 +60,8 @@ func (player *GamePlayer) SendMessageToServer(Type string, response *types.GameS
 				defer wg.Done()
 				err := player.SendToServer(addr, Type, response)
 				if err == nil {
-					fmt.Printf("%s response my request %s, %d \n", p.PlayerId, Type)
-				} else {
-					fmt.Printf("%s reject my request %s, %d, error: %s\n", p.PlayerId, Type, err)
-				}
+					fmt.Printf("%s response my request %s\n", p.PlayerId, Type)
+				} 
 			}(addr, Type, response, &wg)
 		}
 		wg.Wait()
